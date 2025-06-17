@@ -228,6 +228,8 @@ public class MoveAI : MonoBehaviour
     private bool isDead;
     private BoundsInt mapBounds;
 
+    private Vector3Int moveCellDir;
+
     /* ───────── 초기화 ───────── */
     private void Awake()
     {
@@ -253,37 +255,56 @@ public class MoveAI : MonoBehaviour
         if (isDead) return;
 
         timer += Time.fixedDeltaTime;
-        if (timer >= changeDirectionInterval || !CanMove(moveDirection))
+        // cell 단위 CanMove 호출
+        if (timer >= changeDirectionInterval || !CanMove(moveCellDir))
         {
             ChooseNewDirection();
             timer = 0f;
         }
 
-        rb.linearVelocity = moveDirection * moveSpeed;
-        SnapToTileBottom();
+        // 1) 현재 cell → 목표 cell
+        Vector3Int currentCell = groundTilemap.WorldToCell(rb.position);
+        Vector3Int nextCell    = currentCell + moveCellDir;
+        Vector3   targetWorld  = groundTilemap.GetCellCenterWorld(nextCell);
+
+        // 2) Physics 기반으로 한 스무스 이동
+        Vector2 newPos = Vector2.MoveTowards(
+            rb.position,
+            (Vector2)targetWorld,
+            moveSpeed * Time.fixedDeltaTime
+        );
+        rb.MovePosition(newPos);
+
+        // 3) 목표에 거의 도달했으면 정확히 타일 중앙(바닥)에 스냅
+        if (Vector2.Distance(rb.position, (Vector2)targetWorld) < 0.01f)
+            SnapToTileBottom();
+
+        // 4) 플레이어·폭발 체크
         CheckOverlapHits();
     }
 
+
     /* ───────── 이동 가능 여부 ───────── */
-    private bool CanMove(Vector2 dir)
+    private bool CanMove(Vector3Int cellDir)
     {
-        if (dir == Vector2.zero) return false;
+        // 1) 현재 위치가 어느 cell인지 구하고
+        Vector3Int currentCell = groundTilemap.WorldToCell(rb.position);
+        // 2) 이동하려는 목표 cell
+        Vector3Int nextCell = currentCell + cellDir;
 
-        Vector2 nextCenter = rb.position + dir;
-        Vector3Int cell = groundTilemap.WorldToCell(nextCenter);
-
-        // 1) 바닥 타일이 아니면 이동 불가
-        if (!groundTilemap.HasTile(cell))
+        // 3) 초록 바닥 타일이 아니면 이동 불가
+        if (!groundTilemap.HasTile(nextCell))
             return false;
 
-        // 2) 맵 경계 & 벽/파괴 타일 체크
-        if (!mapBounds.Contains(cell) ||
-            TilemapCollisionUtility.IsPositionBlocked(nextCenter,
-                                                     indestructibleTilemap,
-                                                     destructibleTilemap))
+        // 4) 월드상 중심 좌표 구하기
+        Vector3 nextCenter = groundTilemap.GetCellCenterWorld(nextCell);
+
+        // 5) 맵 경계 & 벽/파괴 타일 체크
+        if (!mapBounds.Contains(nextCell) ||
+            TilemapCollisionUtility.IsPositionBlocked(nextCenter, indestructibleTilemap, destructibleTilemap))
             return false;
 
-        // 3) 추가 오브젝트 충돌 체크
+        // 6) 폭탄·플레이어 등 추가 충돌체크
         if (Physics2D.OverlapCircle(nextCenter, 0.35f, additionalCollisionMask))
             return false;
 
@@ -293,92 +314,72 @@ public class MoveAI : MonoBehaviour
     /* ───────── 방향 선택 ───────── */
     private void ChooseNewDirection()
     {
-        Vector2[] dirs = { Vector2.up, Vector2.down, Vector2.left, Vector2.right };
-        List<Vector2> valid = new List<Vector2>();
+        Vector3Int[] dirs = { Vector3Int.up, Vector3Int.down, Vector3Int.left, Vector3Int.right };
+        var valid = new List<Vector3Int>();
         foreach (var d in dirs)
             if (CanMove(d)) valid.Add(d);
 
         if (valid.Count == 0)
         {
-            moveDirection = Vector2.zero;
+            moveCellDir = Vector3Int.zero;
             return;
         }
 
-        if (moveDirection != Vector2.zero && Random.value < 0.5f && CanMove(moveDirection))
+        if (valid.Contains(moveCellDir) && Random.value < 0.5f)
             return;
 
-        moveDirection = valid[Random.Range(0, valid.Count)];
+        moveCellDir = valid[Random.Range(0, valid.Count)];
     }
-
-    /* ───────── 스폰 위치 찾기 ───────── */
+        // ──── 스폰 위치 찾기 ───────── */
     private void SetRandomSpawnPosition()
     {
         indestructibleTilemap.CompressBounds();
         BoundsInt bounds = indestructibleTilemap.cellBounds;
 
-        List<Vector3> candidates = new List<Vector3>();
-        Vector2[] dirs = { Vector2.up, Vector2.down, Vector2.left, Vector2.right };
+        // 1) 모든 그라운드 cell을 모아두기
+        List<Vector3Int> groundCells = new List<Vector3Int>();
+        for (int x = bounds.xMin; x < bounds.xMax; x++)
+            for (int y = bounds.yMin; y < bounds.yMax; y++)
+                if (groundTilemap.HasTile(new Vector3Int(x, y, 0)))
+                    groundCells.Add(new Vector3Int(x, y, 0));
 
+        // 2) 랜덤으로 시도
         for (int i = 0; i < spawnSearchAttempts; i++)
         {
-            int x = Random.Range(bounds.xMin, bounds.xMax);
-            int y = Random.Range(bounds.yMin, bounds.yMax);
-            Vector3Int cell = new Vector3Int(x, y, 0);
-            // 타일 중심
-            Vector3 center = groundTilemap.CellToWorld(cell) + groundTilemap.cellSize * 0.5f;
+            var cell = groundCells[Random.Range(0, groundCells.Count)];
+            Vector3 center = groundTilemap.GetCellCenterWorld(cell);
 
-            // 초록 바닥 확인
-            if (!groundTilemap.HasTile(cell))
-                continue;
-            // 벽/파괴 타일 위인지 체크
-            if (TilemapCollisionUtility.IsPositionBlocked(center,
-                                                         indestructibleTilemap,
-                                                         destructibleTilemap))
-                continue;
-            // 오브젝트 차지 영역인지 체크
-            if (Physics2D.OverlapCircle(center, 0.2f, additionalCollisionMask))
-                continue;
+            // 벽/파괴 타일, 오브젝트 충돌, 탈출구 체크… (기존 로직 재활용)
+            if (TilemapCollisionUtility.IsPositionBlocked(center, indestructibleTilemap, destructibleTilemap)) continue;
+            if (Physics2D.OverlapCircle(center, 0.2f, additionalCollisionMask)) continue;
 
-            // 이웃 이동 가능 확인
+            // 주변 4방향으로 CanMove 체크
             bool hasExit = false;
-            foreach (var d in dirs)
-            {
-                Vector3 nCenter = center + (Vector3)d;
-                Vector3Int nCell = groundTilemap.WorldToCell(nCenter);
-                if (!groundTilemap.HasTile(nCell)) continue;
-                if (!mapBounds.Contains(nCell)) continue;
-                if (TilemapCollisionUtility.IsPositionBlocked(nCenter,
-                                                             indestructibleTilemap,
-                                                             destructibleTilemap))
-                    continue;
-                if (Physics2D.OverlapCircle(nCenter, 0.2f, additionalCollisionMask))
-                    continue;
-                hasExit = true;
-                break;
-            }
-            if (hasExit)
-                candidates.Add(center);
+            foreach (var d in new Vector3Int[]{Vector3Int.up, Vector3Int.down, Vector3Int.left, Vector3Int.right})
+                if (CanMove(d))
+                {
+                    hasExit = true;
+                    break;
+                }
+            if (!hasExit) continue;
+
+            // 유효 위치 발견!
+            rb.position = center;
+            transform.position = center;
+            return;
         }
 
-        if (candidates.Count > 0)
-        {
-            Vector3 pos = candidates[Random.Range(0, candidates.Count)];
-            rb.position = pos;
-            transform.position = pos;
-        }
-        else
-        {
-            Debug.LogWarning("MoveAI: No valid spawn positions in green area");
-        }
+        Debug.LogWarning("MoveAI: No valid spawn positions in green area");
     }
 
     /* ───────── 타일 중앙 스냅 ───────── */
     private void SnapToTileBottom()
     {
         Vector2 p = rb.position;
-        // pivot.x 는 여전히 센터, pivot.y 는 정수(바닥)
+        // X는 여전히 “타일의 중앙(x+0.5)” 으로 맞추고
         p.x = Mathf.Round(p.x - 0.5f) + 0.5f;
-        p.y = Mathf.Round(p.y - 0f) + 0f;
+        // Y는 피벗이 타일 바닥이 되도록 정수 위치로 내립니다.
+        p.y = Mathf.Round(p.y);
         rb.position = p;
         transform.position = p;
     }
