@@ -9,24 +9,42 @@ public class ItemPickup : MonoBehaviour
         SpeedIncrease,
     }
 
-    public ItemType type;
-
-    private void OnItemPickup(GameObject player)
+    public ItemType type;    private void OnItemPickup(GameObject player)
     {
         switch (type)
         {
             case ItemType.ExtraBomb:
-                player.GetComponent<BombController>().AddBomb();
+                BombController bombController = player.GetComponent<BombController>();
+                if (bombController != null)
+                {
+                    bombController.AddBomb();
+                }
                 break;
 
             case ItemType.BlastRadius:
-                player.GetComponent<BombController>().explosionRadius++;
+                BombController bombController2 = player.GetComponent<BombController>();
+                if (bombController2 != null)
+                {
+                    bombController2.explosionRadius++;
+                }
                 break;
 
             case ItemType.SpeedIncrease:
-                player.GetComponent<MovementController>().speed++;
+                // Try both movement controllers
+                MovementController movementController = player.GetComponent<MovementController>();
+                if (movementController != null)
+                {
+                    movementController.speed++;
+                }
+                else
+                {
+                    TilemapMovementController tilemapMovementController = player.GetComponent<TilemapMovementController>();
+                    if (tilemapMovementController != null)
+                    {
+                        tilemapMovementController.speed++;
+                    }
+                }
                 break;
-
         }
 
         Destroy(gameObject);

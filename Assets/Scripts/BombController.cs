@@ -19,9 +19,13 @@ public class BombController : MonoBehaviour
     public float explosionDuration = 1f;
     public int explosionRadius = 1;
 
-    [Header("Destructible")]
-    public Tilemap destructibleTiles;
+    [Header("Tilemaps")]
+    public Tilemap indestructibleTiles;
+    public Tilemap destructibleTiles;    [Header("Destructible Items")]
     public Destructible destructiblePrefab;
+    [Range(0f, 1f)]
+    public float itemSpawnChance = 0.2f;
+    public GameObject[] spawnableItems;
 
 
 
@@ -58,13 +62,10 @@ public class BombController : MonoBehaviour
         Explode(position, Vector2.up, explosionRadius);
         Explode(position, Vector2.down, explosionRadius);
         Explode(position, Vector2.left, explosionRadius);
-        Explode(position, Vector2.right, explosionRadius);
-
-
-        Destroy(bomb);
+        Explode(position, Vector2.right, explosionRadius);        Destroy(bomb);
         bombsRemaining++;
     }
-
+    
     private void Explode(Vector2 position, Vector2 direction, int length)
     {
         if (length <= 0){
@@ -73,9 +74,22 @@ public class BombController : MonoBehaviour
 
         position += direction;
 
-        if (Physics2D.OverlapBox(position, Vector2.one / 2f, 0f, explosionLayerMask))
+        // Check if position is blocked by indestructible tiles
+        if (IsPositionBlockedByIndestructible(position))
+        {
+            return; // Stop explosion at indestructible tiles
+        }
+
+        // Check if position is blocked by destructible tiles
+        if (IsPositionBlockedByDestructible(position))
         {
             ClearDestructible(position);
+            return; // Stop explosion after destroying destructible tile
+        }
+
+        // Check for other collisions (players, items, etc.)
+        if (Physics2D.OverlapBox(position, Vector2.one / 2f, 0f, explosionLayerMask))
+        {
             return;
         }
 
@@ -86,7 +100,22 @@ public class BombController : MonoBehaviour
 
         Explode(position, direction, length -1);
     }
-
+    
+    private bool IsPositionBlockedByIndestructible(Vector2 position)
+    {
+        if (indestructibleTiles == null) return false;
+        
+        Vector3Int cell = indestructibleTiles.WorldToCell(position);
+        return indestructibleTiles.GetTile(cell) != null;
+    }
+    
+    private bool IsPositionBlockedByDestructible(Vector2 position)
+    {
+        if (destructibleTiles == null) return false;
+        
+        Vector3Int cell = destructibleTiles.WorldToCell(position);        return destructibleTiles.GetTile(cell) != null;
+    }
+    
     private void ClearDestructible(Vector2 position)
     {
         Vector3Int cell = destructibleTiles.WorldToCell(position);
@@ -94,8 +123,25 @@ public class BombController : MonoBehaviour
 
         if (tile != null)
         {
-            Instantiate(destructiblePrefab, position, Quaternion.identity);
+            // Remove the tile from the tilemap
             destructibleTiles.SetTile(cell, null);
+            
+            // Spawn destructible effect (optional)
+            if (destructiblePrefab != null)
+            {
+                Instantiate(destructiblePrefab, position, Quaternion.identity);
+            }
+              // Try to spawn items
+            TrySpawnItem(position);
+        }
+    }
+    
+    private void TrySpawnItem(Vector3 position)
+    {
+        if (spawnableItems.Length > 0 && UnityEngine.Random.value < itemSpawnChance)
+        {
+            int randomIndex = UnityEngine.Random.Range(0, spawnableItems.Length);
+            Instantiate(spawnableItems[randomIndex], position, Quaternion.identity);
         }
     }
 
