@@ -65,7 +65,7 @@ public class MapSynchronizerEditor : Editor
                 EditorGUILayout.LabelField($"Empty Cells: {destructibleCount}");
                 EditorGUILayout.LabelField($"Blocked Cells: {blockedCount}");
                 
-                float spawnRate = synchronizer.destructibleSpawnChance;
+                float spawnRate = synchronizer.destructibleSpawnRate;
                 int expectedTiles = Mathf.RoundToInt(destructibleCount * spawnRate);
                 EditorGUILayout.LabelField($"Expected Tiles: ~{expectedTiles} ({spawnRate:P0} of {destructibleCount})");
             }

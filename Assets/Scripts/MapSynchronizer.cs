@@ -14,7 +14,7 @@ public class MapSynchronizer : MonoBehaviour
     
     [Header("Settings")]
     [Range(0f, 1f)]
-    public float destructibleSpawnChance = 0.7f;
+    public float destructibleSpawnRate = 0.7f;
     public bool autoSynchronizeOnStart = false; // New option to control auto-sync
     
     void Start()
@@ -117,7 +117,7 @@ public class MapSynchronizer : MonoBehaviour
                 int index = x + y * mapData.width;
                 
                 // Only place destructible tiles where mapMatrix is 1 (empty space) and random chance passes
-                if (mapData.mapMatrix[index] == 1 && Random.value < destructibleSpawnChance)
+                if (mapData.mapMatrix[index] == 1 && Random.value < destructibleSpawnRate)
                 {
                     Vector3Int cellPosition = new Vector3Int(mapData.origin.x + x, mapData.origin.y + y, 0);
                     destructibleTilemap.SetTile(cellPosition, destructibleTile);
